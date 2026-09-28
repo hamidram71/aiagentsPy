@@ -1,6 +1,6 @@
 # CSV Insight Agent
 
-**English** · [فارسی](README.fa.md)
+**English** 
 
 An AI agent that answers business questions about a CSV file. You give it a file and a question. It makes a plan, computes the numbers with pandas, draws charts and writes a Markdown report.
 
