@@ -1,376 +1,355 @@
 # CSV Insight Agent
 
-یک ایجنت چندعاملی (multi-agent) با **LangGraph** که یک فایل CSV و یک سؤال می‌گیرد،
-خودش نقشهٔ تحلیل می‌کشد، با pandas عدد درمی‌آورد، نمودار می‌سازد و یک گزارش
-Markdown می‌نویسد.
+**English** · [فارسی](README.fa.md)
 
-این پروژه به‌عنوان **پروژهٔ پایانی دورهٔ LangGraph در freeCodeCamp** نوشته شده و
-عمداً یک پله فراتر از دوره است. راهنمای بازنویسی گام‌به‌گام در
-[`PRACTICE.md`](PRACTICE.md) است — اگر هدفتان تمرین است، از همان‌جا شروع کنید،
-نه از این فایل.
+An AI agent that answers business questions about a CSV file. You give it a file and a question. It makes a plan, computes the numbers with pandas, draws charts and writes a Markdown report.
 
-اگر فقط ده دقیقه وقت دارید، بخش
-[«هجده درس که فقط از خرابی بیرون می‌آید»](PRACTICE.md#هجده-درس-که-فقط-از-خرابی-بیرون-میآید)
-را بخوانید. آن هجده مورد، باگ‌های واقعی همین پروژه بودند: مسیر خوش‌بینانه
-بی‌عیب کار می‌کرد و تست‌ها سبز بودند، تا وقتی کسی پرسید «اگر این نود خطا بدهد
-چه می‌شود؟». چهارتای اول اگر با مدل واقعی اجرا می‌شد هزاران فراخوانی پولی
-هزینه داشت؛ پنجمی وقتی پیدا شد که کاربر پروژه را روی ماشین خودش اجرا کرد.
+```
+python main.py data/sales.csv "Which region drives revenue, and is it growing?"
+```
+
+The model decides *what* to compute. The code does the computing, and it enforces the rules a report must follow. Every number in a report comes from a pandas call that you can trace, not from the model's memory.
+
+Built with [LangGraph](https://github.com/langchain-ai/langgraph). It works with OpenAI or Anthropic models, from the command line or in a browser.
 
 ---
 
-## شروع سریع
+## Contents
 
-راه‌اندازی قدم‌به‌قدم با خروجی مورد انتظار هر مرحله و رفع اشکال، در
-[`RUNBOOK.md`](RUNBOOK.md) است. خلاصه‌اش:
-
-```bash
-python -m venv .venv && source .venv/bin/activate   # ویندوز: .venv\Scripts\activate
-pip install -r requirements.txt
-
-cp .env.example .env        # کلید API را داخلش بگذارید
-```
-
-اجرا:
-
-```bash
-# با OpenAI (پیش‌فرض)
-python main.py data/sales.csv "کدام منطقه بیشترین درآمد را دارد و روند صعودی است؟"
-
-# با Claude
-python main.py data/sales.csv "..." --provider anthropic
-
-# بدون تأیید انسانی (غیرتعاملی)
-python main.py data/sales.csv "..." --no-approval
-
-# بدون هیچ کلید API — با مدل اسکریپت‌شده، برای دیدن جریان گراف
-python main.py data/sales.csv "..." --provider fake
-```
-
-**مدل باید tool calling و structured output داشته باشد**، وگرنه نودهای
-analyst و charter کار نمی‌کنند. سنجش قابلیت‌های مدل، قبل از اولین اجرای واقعی:
-
-```bash
-python check_llm.py        # چت ساده، structured output، tool calling
-```
-
-نتیجهٔ هر اجرا در پوشهٔ خودش می‌نشیند: `outputs/runs/<thread>/` — گزارش
-`report_<timestamp>.md`، نمودارهای PNG، و `meta.json` (سؤال، کاربر، وضعیت، توکن‌ها).
-
-تست‌ها (بدون نیاز به کلید API و بدون شبکه):
-
-```bash
-pytest          # ۲۴۳ تست (`pytest -rs` می‌گوید اگر چیزی skip شد، چرا)
-```
-
-نقشهٔ گراف:
-
-```bash
-python draw_graph.py            # متن Mermaid → mermaid.live
-python draw_graph.py --png      # outputs/graph.png
-```
+- [What you get](#what-you-get)
+- [How it works](#how-it-works)
+- [Quick start](#quick-start)
+- [Web app](#web-app)
+- [Command line](#command-line)
+- [Configuration](#configuration)
+- [Data, privacy and security](#data-privacy-and-security)
+- [Project structure](#project-structure)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
+- [LangGraph version](#langgraph-version)
+- [Further documentation](#further-documentation)
 
 ---
 
-## اپ وب (برای شما و همکاران)
+## What you get
 
-همان ایجنت، در مرورگر: فایل CSV را بالا می‌گذارید، سؤال می‌پرسید، نقشه را
-تأیید یا اصلاح می‌کنید، و گزارش را با نمودارهایش همان‌جا می‌خوانید و دانلود
-می‌کنید.
+For each question, the agent writes one run folder, `outputs/runs/<run-id>/`, containing:
 
-```bash
-python run_app.py          # ویندوز: یا روی run_app.bat دوبار کلیک کنید
-```
+| File | Content |
+| --- | --- |
+| `report_<time>.md` | The report: summary, findings with their evidence, charts, caveats |
+| `*.png` | The charts the report refers to |
+| `working_*.csv` | The cleaned data, if the agent cleaned it (duplicates removed, wrong values fixed) |
+| `meta.json` | Question, user, model, status and token usage |
 
-مرورگر خودش باز می‌شود (`http://localhost:8501`).
+What makes the reports reliable:
 
-- **بدون `APP_PASSWORD` در `.env`:** فقط همین کامپیوتر به اپ دسترسی دارد.
-- **با `APP_PASSWORD` (حداقل ۸ حرف):** همکاران در شبکهٔ دفتر با آدرسی که
-  `run_app.py` چاپ می‌کند (مثل `http://192.168.1.23:8501`) و این رمز وارد
-  می‌شوند. ویندوز اولین بار می‌پرسد Python به شبکه دسترسی داشته باشد یا نه:
-  فقط **Private** را تیک بزنید.
-
-چه چیزهایی دارد:
-
-- هر اجرا در پوشهٔ خودش — دو نفر هم‌زمان نمودارهای هم را رونویسی نمی‌کنند.
-- اجرا در پس‌زمینه است: می‌شود صفحه را بست و بعداً از فهرست **Runs** برگشت.
-- دکمهٔ **Stop** (بعد از قدم جاری) و **Continue** (از آخرین قدم تمام‌شده).
-- اگر اپ وسط اجرا بسته شد، اجرا با **Continue** از همان‌جا ادامه می‌دهد.
-- دانلود گزارش (`.md`) یا همه‌چیز (`.zip`: گزارش، نمودارها، دادهٔ پاک‌شده).
-- مصرف توکن هر اجرا و هر نفر؛ فهرست کامل در `outputs/usage.csv`. (این فایل را در اکسل باز نگه ندارید: اکسل قفلش می‌کند و مصرفِ اجراهای آن مدت ثبت نمی‌شود. برای دیدنش یک کپی از آن را باز کنید.)
-- فایل CSV اکسل آلمانی (با `;` و اعشار با کاما) مستقیم خوانده می‌شود.
-
-داده از کامپیوتر شما بیرون نمی‌رود، جز چیزی که به‌هرحال برای مدل فرستاده
-می‌شود (پروفایل داده و خروجی ابزارها، نه کل فایل). آمار استفادهٔ Streamlit
-خاموش است (`.streamlit/config.toml`).
+- **Numbers are computed, never recalled.** A finding is only recorded when a tool produced the numbers behind it.
+- **Cleaning is verified.** If the agent removes or corrects rows, the code compares the data before and after and lists what actually changed. The report uses that list, not the model's own account.
+- **You approve the plan.** The run pauses after planning. You approve the plan or say what to change.
+- **Every report has a chart**, and a chart is always drawn from the same (cleaned) data as the numbers.
+- **Budgets are hard limits.** A run can never loop forever or spend more model calls than `MAX_STEPS`.
+- **German Excel files work as they are.** Semicolons as separators, decimal commas, dates like `13.02.2025` and the Windows `cp1252` encoding are all read correctly.
 
 ---
 
-## چه چیزی آزمایش شده و چه چیزی نه
+## How it works
 
-صریح می‌گویم، چون فرقش برای شما مهم است:
-
-**آزمایش‌شده و کار می‌کند**
-
-- ۲۴۳ تست سبز، با مدل اسکریپت‌شده — بدون شبکه و بدون کلید API؛ و مستقل از
-  `.env` شما (با یک `.env` واقعی هم آزمایش شد)
-- اجرای کامل CLI با `--provider fake`: pandas واقعی، فایل PNG واقعی، گزارش
-  Markdown واقعی، و checkpoint واقعی SQLite
-- توقف در یک پروسه و ادامه در پروسه‌ای دیگر (`interrupt()` + `Command(resume=...)`)
-- ساخته‌شدن کلاینت OpenAI و Anthropic با مدل درست هر کدام
-- همهٔ ابزارها روی `data/sales.csv` واقعی
-- pyflakes تمیز، و `pip install -r requirements.txt` قابل نصب
-- **ویندوز ۱۱ + پایتون ۳.۱۴ با gpt-5.6-terra**: اجراهای واقعی توسط کاربر،
-  تا گزارشی که همهٔ عددهایش با محاسبهٔ دستی می‌خواند
-- اپ وب: ورود با رمز، آپلود، تأیید نقشه، Stop/Continue، دو اجرای هم‌زمان با
-  نمودارهای جدا — با تست‌های Streamlit و یک مرورگر واقعی (Chromium)
-
-**آزمایش‌نشده — چون کلید API نداشتم**
-
-- یک اجرای واقعی با OpenAI یا Claude. سیم‌کشی گراف آزمایش شده، ولی **کیفیت
-  promptها** نه: این‌که مدل واقعاً نقشهٔ خوبی بکشد، findingهای درست دربیاورد،
-  و بخش Caveats را جدی بگیرد — این‌ها را باید خودتان با اولین اجرا ببینید.
-  انتظار داشته باشید promptها در `src/prompts.py` کمی تنظیم لازم داشته باشند؛
-  این کار طبیعیِ ساختن ایجنت است، نه نقص پروژه.
-- اپ وب با چند کاربر هم‌زمان روی یک کامپیوتر آزمایش شده (تست‌ها + مرورگر
-  واقعی)، ولی نه با ده‌ها نفر. برای یک تیم کوچک طراحی شده، نه برای سرور.
-- **نام مدل‌ها تاریخ انقضا دارند.** `gpt-4o-mini` که پیش‌فرض اولیهٔ این پروژه
-  بود، ظرف چند ماه از فهرست OpenAI حذف شد و یک checkout تازه با
-  «model not found» شکست می‌خورد — به دلیلی که هیچ ربطی به کد ندارد.
-  پیش‌فرض‌های امروز `gpt-6-luna` و `claude-sonnet-5` هستند و آن‌ها هم روزی
-  کهنه می‌شوند. همه‌شان در `DEFAULT_MODELS` در `src/config.py` جمع‌اند و با
-  `LLM_MODEL` قابل override؛ `python check_llm.py` در چند ثانیه می‌گوید
-  نام فعلی کار می‌کند یا نه.
-
----
-
-> **یادداشت:** پشتیبانی از Ollama در نسخهٔ ۰.۱۰.۰ حذف شد تا پروژه ساده بماند.
-> چند درس در `PRACTICE.md` از اجراهای واقعی روی یک مدل محلی بیرون آمدند و
-> همچنان معتبرند — آن‌ها دربارهٔ رفتار مدل‌اند، نه دربارهٔ provider. برای
-> برگرداندنش کافی است یک شاخه در `src/llm.py` اضافه کنید؛ کل پروژه فقط از
-> همان یک تابع مدل می‌گیرد.
-
----
-
-## معماری
+The agent is a graph of small steps ("nodes"). A **supervisor** sits in the middle and picks the next worker on every turn.
 
 ```mermaid
-graph TD
-    START([START]) --> loader
-    loader[loader<br/>خواندن و پروفایل CSV<br/>بدون LLM] -.->|خطا| END1([END])
-    loader -.-> planner
-    planner[planner<br/>structured output → Plan] -.-> approval
-    planner -.->|REQUIRE_APPROVAL=false| supervisor
-    approval[approval<br/>interrupt: تأیید انسان] -.->|رد شد| planner
-    approval -.->|تأیید شد| supervisor
-    supervisor{supervisor<br/>structured output → Route}
-    supervisor -.-> analyst
-    supervisor -.-> charter
-    supervisor -.-> reporter
-    supervisor -.->|FINISH| END2([END])
-    analyst[analyst] -.-> analyst_tools[analyst_tools<br/>ToolNode]
-    analyst_tools --> analyst
-    analyst -.-> supervisor
-    charter[charter] -.-> charter_tools[charter_tools<br/>ToolNode]
-    charter_tools --> charter
-    charter -.-> supervisor
-    reporter[reporter<br/>نوشتن فایل .md] --> supervisor
+flowchart TD
+    loader["loader<br/>read and profile the CSV"] --> planner["planner<br/>turn the question into steps"]
+    planner --> approval["approval<br/>you approve the plan"]
+    approval -- feedback --> planner
+    approval -- approved --> supervisor(["supervisor<br/>who works next?"])
+    supervisor <--> analyst["analyst<br/>computes with pandas"]
+    supervisor <--> charter["charter<br/>draws charts"]
+    supervisor <--> reporter["reporter<br/>writes the report"]
+    analyst <--> analyst_tools["analysis tools<br/>6 tools + sandbox"]
+    charter <--> charter_tools["make_chart"]
+    supervisor -- "FINISH, once a report exists" --> done([END])
 ```
 
-الگو **supervisor / worker** است: یک نود مسیریاب، سه کارگر تک‌منظوره.
+| Node | What it does | Model call? |
+| --- | --- | --- |
+| `loader` | Reads the CSV, detects dates, builds a short data profile | No |
+| `planner` | Writes a 3–6 step analysis plan (structured output) | Yes, once |
+| `approval` | Pauses the run until a person approves the plan | No |
+| `supervisor` | Chooses the next worker. Code checks and corrects the choice | Yes, per turn |
+| `analyst` | Calls pandas tools until it can state a finding | Yes, per turn |
+| `charter` | Draws charts for the findings | Yes, per turn |
+| `reporter` | Writes the report from the findings and charts | Yes, once |
 
-| نود | LLM؟ | کارش |
-|---|---|---|
-| `loader` | ❌ | خواندن CSV، ساختن پروفایل (ستون‌ها، dtype، بازه‌ها، nullها) |
-| `planner` | ✅ structured | تبدیل سؤال به ۳ تا ۶ قدم مشخص |
-| `approval` | ❌ | `interrupt()` — انسان نقشه را تأیید یا اصلاح می‌کند |
-| `supervisor` | ✅ structured | هر نوبت یک کارگر انتخاب می‌کند، یا پایان |
-| `analyst` | ✅ + tools | حلقهٔ ReAct با ۵ ابزار pandas |
-| `charter` | ✅ + tools | ساختن نمودار با matplotlib |
-| `reporter` | ✅ | نوشتن گزارش Markdown روی دیسک |
+### Analysis tools
 
----
+| Tool | Purpose |
+| --- | --- |
+| `group_aggregate` | Sum, mean, count, etc. per group |
+| `value_counts` | Frequency of each value in a column |
+| `correlations` | Pearson correlations between numeric columns |
+| `column_stats` | Descriptive statistics |
+| `run_pandas` | Any pandas snippet, run inside a sandbox |
+| `save_cleaned_data` | Replaces the working data with a cleaned version, for all later tools |
 
-## چه چیزی از دوره است و چه چیزی اضافه شده
+### Design rules
 
-آنچه در دوره دیدید و اینجا هم هست: `StateGraph`، `TypedDict` برای state،
-`add_messages`، نودها و یال‌های شرطی، حلقه، `ToolNode`، حافظه با checkpointer،
-الگوی ReAct، و RAG-مانند بودن reporter (تولید از روی شواهد جمع‌شده).
-
-آنچه فراتر از دوره است:
-
-| موضوع | کجا ببینید | چرا مهم است |
-|---|---|---|
-| الگوی supervisor/worker | `src/nodes/supervisor.py` | تعداد قدم‌های تحلیل از قبل معلوم نیست؛ فقط مدل می‌تواند در زمان اجرا تصمیم بگیرد |
-| پیشرفت نقشه در state | `state.py:addressed_steps` | هر قدم `[done]`/`[pending]` است، وگرنه supervisor کار تمام‌شده را تکرار می‌کند |
-| استخراج finding با schema | `nodes/analyst.py:_extract_finding` | مدل محلی قالب متنی را رعایت نمی‌کند؛ شیء تایپ‌دار تضمین می‌شود |
-| `interrupt()` + resume | `src/nodes/approval.py` | توقف گراف، خروج از پروسه، و ادامه از همان نقطه — حتی روز بعد |
-| checkpoint پایدار با SQLite | `src/graph.py:make_checkpointer` | خودِ «توقف» در دیتابیس ذخیره می‌شود، نه در RAM |
-| structured output | `src/schemas.py` | مسیریابی با JSON معتبر، نه با پارس کردن متن آزاد |
-| سندباکس برای کد تولیدی مدل | `src/sandbox.py` | سه لایه: اعتبارسنجی AST، namespace محدود، timeout |
-| `InjectedState` در ابزارها | `src/tools/analysis.py` | مسیر فایل از schema ابزار حذف می‌شود، پس مدل نمی‌تواند مسیر اشتباه بسازد |
-| مدیریت خطا به‌جای crash | `src/errors.py` | خطا تبدیل به *داده* در state می‌شود؛ supervisor دورش می‌زند |
-| نرده‌های محافظ (guardrails) | `supervisor.py` + `route_from_analyst` | بودجهٔ قدم **داخل** هر حلقه، نه فقط در supervisor |
-| پنجرهٔ پیام سالم | `src/messages.py` | بریدن بین `tool_calls` و `ToolMessage` باعث خطای provider می‌شود |
-| streaming | `main.py:run` | دو حالت هم‌زمان: `updates` برای خط نتیجهٔ هر نود، `messages` به‌عنوان نشانگر زنده در نودهای کند |
-| تعویض provider | `src/llm.py` | OpenAI / Claude با یک متغیر محیطی |
-| تست گراف بدون کلید API | `tests/fake_llm.py` | مدل اسکریپت‌شده؛ پلامبینگ ایجنت را قطعی تست می‌کند |
+1. **A prompt asks; code guarantees.** Every rule that code can check is checked in code: the plan ends with a report step, no step is analysed more than twice, the reporter never runs before there is a finding, and every report gets a chart.
+2. **Errors are data.** A failing node does not crash the run. The error goes into the state, and the supervisor works around it. Errors that a retry cannot fix (bad API key, unknown model, a refused request parameter) stop the run cleanly, and it can be resumed after the fix.
+3. **Every loop has a counter.** The supervisor loop and each tool loop are bounded by the step budget.
+4. **Checkpoints everywhere.** State is saved after every node (SQLite). A run can pause for approval, survive a restart and resume where it stopped.
 
 ---
 
-## نسخهٔ LangGraph — مهم
+## Quick start
 
-دوره با **LangGraph 0.x** ضبط شده؛ این پروژه روی **LangGraph 1.2.11** نوشته و
-تست شده است. تفاوت‌هایی که ممکن است گیجتان کند:
+**Requirements:** Python 3.10 or newer, and an OpenAI or Anthropic API key.
 
-| در دوره | اینجا |
-|---|---|
-| `MemorySaver` | `InMemorySaver` (نام قدیمی هنوز alias است) |
-| `interrupt_before=["node"]` در `compile()` | تابع `interrupt()` داخل خود نود |
-| `graph.invoke(None, config)` برای ادامه | `graph.invoke(Command(resume=value), config)` |
-| `SqliteSaver.from_conn_string(...)` | `SqliteSaver(sqlite3.connect(path, check_same_thread=False))` |
+### 1. Install
 
-اگر می‌خواهید دقیقاً با نسخهٔ دوره کار کنید، در `requirements.txt` عدد را عوض
-کنید — اما توصیه‌ام این است که با 1.x تمرین کنید، چون API فعلی همین است.
+Windows (PowerShell):
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
+```
+
+macOS / Linux:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+### 2. Add your API key
+
+Open `.env` and set:
+
+```
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+```
+
+### 3. Check that everything works
+
+```bash
+pytest                                   # all tests, no API key or network needed
+python main.py data/sales.csv "Which region drives revenue?" --provider fake   # a full run with a scripted model, free
+python check_llm.py                      # checks that your real model supports tools and structured output
+```
+
+### 4. Run it for real
+
+```bash
+python main.py data/sales.csv "Which region drives revenue, and is it growing over time?"
+```
+
+`data/sales.csv` is a synthetic sample (425 orders) with deliberate problems: duplicate rows, one wrong value and empty cells. It is a good first test of whether the agent finds them.
 
 ---
 
-## ساختار پروژه
+## Web app
+
+The same agent in a browser: upload a CSV, ask a question, approve the plan, and read the report with its charts.
+
+```bash
+python run_app.py        # Windows: or double-click run_app.bat
+```
+
+The browser opens at `http://localhost:8501`.
+
+| `APP_PASSWORD` in `.env` | Who can open the app |
+| --- | --- |
+| empty (default) | Only this computer |
+| set (8+ characters) | Everyone on the local network who has the password. The launcher prints the address to share |
+
+Features:
+
+- Runs continue in the background. You can close the tab and come back later.
+- **Stop** (after the current step) and **Continue** (from the last finished step).
+- A list of your runs, and optionally everyone's.
+- Download the report (`.md`) or everything (`.zip`).
+- Token usage per run and per user, also written to `outputs/usage.csv`.
+
+On Windows the first start asks whether Python may use the network. Allow it for **private networks only**.
+
+---
+
+## Command line
+
+```
+python main.py <csv> "<question>" [options]
+```
+
+| Option | Effect |
+| --- | --- |
+| `--provider openai\|anthropic\|fake` | Use another provider for this run |
+| `--model NAME` | Use another model for this run |
+| `--no-approval` | Skip the plan approval |
+| `--thread-id ID` | Name the run, so you can resume it later |
+| `--resume --thread-id ID` | Continue a stopped or paused run |
+| `--verbose` | Show debug logging |
+
+Exit codes, for scripts:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Report written |
+| `1` | No report written, or no saved run found for `--resume` |
+| `2` | Configuration problem (settings, API key, arguments) |
+| `3` | The model API refused the request. Fix it, then `--resume` |
+| `4` | The plan needs approval, but the terminal cannot ask (output is piped) |
+| `130` | Stopped with Ctrl+C. `--resume` continues |
+
+Other tools:
+
+```bash
+python check_llm.py          # test your model before the first real run
+python draw_graph.py         # print the graph as Mermaid
+python draw_graph.py --png   # save it as outputs/graph.png
+```
+
+---
+
+## Configuration
+
+All settings live in `.env` (see `.env.example`). Environment variables work too.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `LLM_PROVIDER` | `openai` | `openai`, `anthropic` or `fake` (scripted, for tests) |
+| `LLM_MODEL` | per provider | Model name |
+| `LLM_TEMPERATURE` | `0` | Leave empty to send no temperature (some models accept only their default) |
+| `LLM_TIMEOUT` | `120` | Seconds to wait for one model request |
+| `REQUIRE_APPROVAL` | `true` | Pause for plan approval |
+| `REQUIRE_CHART` | `true` | Every report with findings gets at least one chart |
+| `MAX_STEPS` | `30` | Model turns per run, all nodes together |
+| `MAX_TOOL_ROUNDS` | `4` | Turns a worker gets for one plan step |
+| `MAX_FAILURES` | `3` | Node failures tolerated per run before a partial report |
+| `CHECKPOINT_DB` | `outputs/checkpoints.sqlite` | `:memory:` turns persistence off |
+| `CODE_TIMEOUT` | `15` | Seconds per generated pandas snippet |
+| `MAX_ROWS_TO_MODEL` | `20` | Rows a tool may show the model |
+| `APP_PASSWORD` | empty | Web app: empty = this computer only; set = local network with password |
+| `OUTPUT_DIR` | `outputs/` | Where runs, reports and `usage.csv` are written |
+
+Boolean settings also accept `ja/nein` and `an/aus`. Each key must appear only once in `.env`; the agent warns about duplicates.
+
+Model names change over time. If you get "model not found", set `LLM_MODEL` to a current model name.
+
+---
+
+## Data, privacy and security
+
+**What leaves your computer.** The CSV file itself is never sent to the model. The model receives a data profile (column names and types, counts of empty cells, minimum, maximum and mean of numeric columns, and up to 8 distinct values of short text columns) and the outputs of the tools it calls (for example a table of revenue per region, at most `MAX_ROWS_TO_MODEL` rows). These go to the model provider you configured (OpenAI or Anthropic). Streamlit usage statistics are turned off in `.streamlit/config.toml`.
+
+**What stays local.** Uploaded files, cleaned data, reports, charts, checkpoints and the usage log are all under `outputs/`, which is excluded from Git.
+
+**The sandbox is not a security boundary.** `run_pandas` executes code that the model wrote. The sandbox blocks imports, file access, dangerous names and runaway loops, which stops accidental damage. It cannot stop a determined attacker. So:
+
+- Give the web app password only to people you trust.
+- Never expose the app to the internet or a public network.
+- For untrusted users, run code execution in a container or a separate service.
+
+**Costs.** All runs use the API key in `.env`. `outputs/usage.csv` records the tokens used per run and per user.
+
+**Never commit `.env`.** It holds your API key and is listed in `.gitignore`.
+
+---
+
+## Project structure
 
 ```
 csv-insight-agent/
-├── RUNBOOK.md               راه‌اندازی قدم‌به‌قدم (از اینجا شروع کنید)
-├── CHANGELOG.md             چه چیزی در هر نسخه عوض شد، و آیا نصب مجدد لازم است
-├── main.py                  CLI + streaming + حلقهٔ resume
-├── app.py                   اپ وب (Streamlit)
-├── run_app.py / run_app.bat اجرای اپ وب؛ تصمیم دربارهٔ دسترسی همکاران
-├── .streamlit/config.toml   تنظیمات Streamlit (آمار استفاده خاموش)
-├── check_llm.py             سنجش قابلیت‌های provider (قبل از اولین اجرا)
-├── draw_graph.py            رندر گراف به Mermaid/PNG
-├── data/sales.csv           دادهٔ نمونه (۴۲۵ سطر، با عیب‌های عمدی)
-├── outputs/                 runs/<thread>/ برای هر اجرا، usage.csv، فایل checkpoint
+├── main.py                 command line: run, pause, resume, exit codes
+├── app.py                  web app (Streamlit)
+├── run_app.py / .bat       starts the web app; decides local vs. network access
+├── check_llm.py            checks a model's capabilities before the first run
+├── draw_graph.py           renders the graph as Mermaid or PNG
+├── data/sales.csv          synthetic sample data with deliberate problems
 ├── src/
-│   ├── config.py            تنظیمات، از متغیرهای محیطی
-│   ├── llm.py               ساخت مدل، تعویض provider
-│   ├── state.py             AgentState + reducerها
-│   ├── schemas.py           مدل‌های Pydantic برای structured output
-│   ├── prompts.py           promptهایی که شما تنظیم می‌کنید (پچ‌ها دست نمی‌زنند)
-│   ├── internal_prompts.py  promptهایی که کد به آن‌ها وابسته است — تنظیم نکنید
-│   ├── budget.py            تقسیم بودجهٔ قدم‌ها (سهم هر قدم، رزرو نمودار)
-│   ├── formatting.py        نوشتن عدد و کلید خالی برای مدل (یک قاعده، یک جا)
-│   ├── dataset.py           بارگذاری و پروفایل CSV (بدون LLM)
-│   ├── sandbox.py           اجرای امن کد pandas تولیدشده
-│   ├── messages.py          پنجرهٔ امن پیام‌ها
-│   ├── errors.py            دکوراتور safe_node
-│   ├── tools/
-│   │   ├── analysis.py      ۵ ابزار pandas
-│   │   └── charts.py        ابزار نمودار
-│   ├── nodes/               یک فایل به‌ازای هر نود
-│   ├── graph.py             سیم‌کشی گراف + checkpointer
-│   ├── runner.py            شروع/ادامهٔ اجرا، meta.json، توکن‌ها — مشترک CLI و اپ
-│   └── jobs.py              اجرای پس‌زمینه برای اپ وب
-└── tests/                   ۲۴۳ تست، هیچ‌کدام به کلید API نیاز ندارند
+│   ├── config.py           settings from .env, validated at start-up
+│   ├── llm.py              builds the model; repairs refused request parameters
+│   ├── state.py            the shared state and how each key is merged
+│   ├── graph.py            nodes, edges and the SQLite checkpointer
+│   ├── budget.py           how the step budget is shared out
+│   ├── dataset.py          CSV reading (incl. German Excel), date detection, profile
+│   ├── sandbox.py          safe execution of model-written pandas code
+│   ├── errors.py           turns node errors into state; stops on unfixable ones
+│   ├── messages.py         trims the conversation without breaking tool-call pairs
+│   ├── runner.py           shared by CLI and web app: run folders, metadata, tokens
+│   ├── jobs.py             background runs for the web app
+│   ├── prompts.py          prompts you may tune
+│   ├── internal_prompts.py prompts the code depends on (do not tune)
+│   ├── schemas.py          Pydantic schemas for structured model output
+│   ├── nodes/              one file per node
+│   └── tools/              analysis tools and the chart tool
+├── tests/                  243 tests; none needs an API key
+└── outputs/                runs, reports, checkpoints (not in Git)
 ```
 
 ---
 
-## دادهٔ نمونه
+## Testing
 
-`data/sales.csv` عمداً کامل نیست. داخلش کار گذاشته شده:
+```bash
+pytest
+```
 
-- ۵ سطر تکراری
-- nullها در `delivery_days` و `channel`
-- یک سطر با `revenue` صد برابر (اشتباه تایپی شبیه‌سازی‌شده) که همبستگی
-  `units ~ revenue` را نابود می‌کند
-- یک اثر واقعی و قابل‌کشف: منطقهٔ North سفارش‌های بزرگ‌تری دارد
-- یک روند صعودی واقعی در طول سال
+The tests use a scripted model instead of a real one, so they are fast, free and repeatable. They cover the whole graph (planning, approval, routing, budgets, failures, resume), the sandbox, the tools, Windows-specific file behaviour, German CSV files, two runs at the same time, and the web app (Streamlit `AppTest`).
 
-هدف این است که بخش «Caveats» گزارش حرفی برای گفتن داشته باشد. ایجنتی که این‌ها
-را نبیند و با اطمینان گزارش بدهد، همان حالت خطرناکی است که باید یاد بگیرید
-تشخیص بدهید.
+On Windows, one test is skipped: the Ctrl+C test needs Unix signals. Expected result: `242 passed, 1 skipped` on Windows, `243 passed` on Linux and macOS.
 
 ---
 
-## تنظیمات
+## Troubleshooting
 
-همه از `.env` خوانده می‌شود (نمونه در `.env.example`):
-
-| متغیر | پیش‌فرض | کار |
-|---|---|---|
-| `LLM_PROVIDER` | `openai` | `openai` / `anthropic` / `fake` |
-| `LLM_MODEL` | بسته به provider | نام مدل |
-| `REQUIRE_APPROVAL` | `true` | توقف برای تأیید انسانی نقشه |
-| `REQUIRE_CHART` | `true` | هر گزارشی که finding دارد، حداقل یک نمودار می‌گیرد |
-| `MAX_STEPS` | `30` | سقف نوبت‌های مدل در کل اجرا (supervisor + workerها) |
-| `LLM_TIMEOUT` | `120` | ثانیه‌های انتظار برای یک درخواست مدل (بدون آن، پیش‌فرض SDK ده دقیقه بود) |
-| `MAX_TOOL_ROUNDS` | `4` | نوبت‌هایی که یک worker برای **یک** قدم نقشه دارد؛ بعد از آن finding از آخرین خروجی ابزار استخراج می‌شود |
-| `MAX_FAILURES` | `3` | مجموع خرابی نودها که در یک اجرا تحمل می‌شود |
-| `CHECKPOINT_DB` | `outputs/checkpoints.sqlite` | `:memory:` برای غیرفعال‌کردن پایداری |
-| `CODE_TIMEOUT` | `15` | ثانیه، سقف اجرای هر قطعه کد |
-| `MAX_ROWS_TO_MODEL` | `20` | سقف سطرهایی که ابزار به مدل نشان می‌دهد |
-| `APP_PASSWORD` | خالی | خالی: اپ وب فقط روی همین کامپیوتر. پر (۸+ حرف): همکاران با این رمز از شبکه وارد می‌شوند |
-| `OUTPUT_DIR` | `outputs/` | محل اجراها، گزارش‌ها، نمودارها و `usage.csv` |
+| Symptom | Likely cause and fix |
+| --- | --- |
+| `error: LLM_PROVIDER=openai needs OPENAI_API_KEY` | The key is missing from `.env`, or `.env` is not next to `main.py` |
+| `model not found` | The model name is outdated. Set `LLM_MODEL` |
+| A note about `temperature` or `reasoning_effort` | The model refused that parameter. The agent repaired the request and continued. Set `LLM_TEMPERATURE=` (empty) to skip the note |
+| Exit code `4` | Output was piped (`\| Select-String`, `> file`). Run without the pipe, or add `--no-approval` |
+| The CSV loads as one column | The file is neither comma- nor semicolon-separated. Save it again as CSV from Excel |
+| Colleagues cannot open the web app | Set `APP_PASSWORD`, restart `run_app.py`, and allow Python in the Windows firewall for private networks |
+| `ModuleNotFoundError` | The virtual environment is not active, or `pip install -r requirements.txt` was not run after an update |
 
 ---
 
-## هشدار امنیتی
+## LangGraph version
 
-`src/sandbox.py` جلوی خطای *تصادفی* مدل را می‌گیرد، نه حملهٔ عمدی. هیچ سندباکس
-in-process در پایتون مرز امنیتی واقعی نیست. اگر روزی این را جایی می‌گذارید که
-ورودی‌اش از کاربر ناشناس می‌آید، اجرای کد باید داخل کانتینر یا سرویس جدا باشد.
-این در خود فایل هم نوشته شده — بخوانیدش، لایه‌بندی‌اش بخش آموزندهٔ پروژه است.
+This project is written and tested against **LangGraph 1.2.11**. Many tutorials, including the freeCodeCamp course it started from, use LangGraph 0.x. The differences you are most likely to meet:
 
-**اپ وب:** هر کس رمز `APP_PASSWORD` را دارد، در عمل می‌تواند از طریق مدل روی
-کامپیوتر شما کد pandas اجرا کند (سؤال به مدل می‌رسد و مدل کد می‌نویسد). رمز را
-فقط به همکاران مورد اعتماد بدهید، اپ را روی شبکهٔ عمومی باز نکنید، و هزینهٔ همهٔ
-اجراها از کلید API شماست — `outputs/usage.csv` می‌گوید چه کسی چقدر مصرف کرده.
+| LangGraph 0.x | This project (1.x) |
+| --- | --- |
+| `MemorySaver` | `InMemorySaver` (the old name is still an alias) |
+| `interrupt_before=["node"]` in `compile()` | `interrupt()` called inside the node |
+| `graph.invoke(None, config)` to continue | `graph.invoke(Command(resume=value), config)` |
+| `SqliteSaver.from_conn_string(...)` | `SqliteSaver(sqlite3.connect(path, check_same_thread=False))` |
 
 ---
 
-## رفع اشکال
+## Further documentation
 
-**`FrozenInstanceError` در تست‌ها** — `Settings` عمداً immutable است؛ از فیکسچر
-`override_settings` در `tests/conftest.py` استفاده کنید، نه از `monkeypatch.setattr`
-روی خود آبجکت.
+| Document | Content |
+| --- | --- |
+| [`RUNBOOK.md`](RUNBOOK.md) | Step-by-step setup, with the expected output of each step and what to do if it fails |
+| [`PRACTICE.md`](PRACTICE.md) | A guide to rebuilding the project phase by phase, and eighteen lessons learned from real bugs |
+| [`CHANGELOG.md`](CHANGELOG.md) | Every version: what changed, which files, and whether a reinstall is needed |
 
-**`tool_use ids must have matching tool_result blocks`** — پنجرهٔ پیام یک
-`ToolMessage` را از `AIMessage` متناظرش جدا کرده. `src/messages.py:window` را ببینید.
+Each document also exists in Persian (`*.fa.md`).
 
-**`InvalidUpdateError: at key 'x'`** — دو نود موازی یک کلید بدون reducer را
-می‌نویسند. در `src/state.py` برایش reducer بگذارید.
+---
 
-**اسکریپت مدل fake تمام شد (`ScriptEmpty`)** — گراف بیشتر از آنچه اسکریپت
-پیش‌بینی کرده LLM صدا زده. یعنی مسیر عوض شده؛ اسکریپت تست را با مسیر جدید
-هم‌تراز کنید.
+## Tech stack
 
-**`interrupt()` کار نمی‌کند** — گراف بدون checkpointer کامپایل شده. بدون
-checkpointer، توقف جایی برای ذخیره‌شدن ندارد.
+Python 3.10+ · LangGraph 1.2 · LangChain Core 1.6 · langchain-openai / langchain-anthropic · pandas · matplotlib · Pydantic · Streamlit 1.64 · SQLite · pytest
 
-**`Unsupported value: 'temperature' does not support 0.0 with this model`** —
-بعضی مدل‌های جدید فقط مقدار پیش‌فرض خودشان را قبول می‌کنند. از نسخهٔ ۰.۱۰.۲
-کد خودش این ۴۰۰ را می‌شناسد، `temperature` را کنار می‌گذارد و یک بار دوباره
-تلاش می‌کند؛ فقط یک خط `note:` می‌بینید. برای اینکه همان یک خط هم نیاید،
-در `.env` بنویسید `LLM_TEMPERATURE=` (خالی).
+Exact versions are pinned in `requirements.txt`.
 
-**`Function tools with reasoning_effort are not supported`** — مدل
-reasoning پیش‌فرض خودش را با ابزار ترکیب نمی‌کند. از ۰.۱۰.۳ کد روی
-فراخوانی‌های ابزاردار (analyst، charter) `reasoning_effort=none` می‌فرستد و
-یک خط `note:` چاپ می‌کند؛ planner و supervisor reasoning خود را نگه می‌دارند.
+## Background
 
-**`stopped at [analyst]: the model API refused the request`** — خطایی که
-تکرار درستش نمی‌کند (کلید، نام مدل، پارامتری که مدل نمی‌پذیرد). اجرا عمداً
-می‌ایستد به‌جای اینکه بودجهٔ خطا را خرجش کند. پیام می‌گوید احتمالاً چه چیزی
-را درست کنید؛ بعد با `--resume --thread-id ...` از همان نود ادامه دهید.
-
-**`The plan needs your approval, but this terminal cannot ask`** (کد خروج ۴) — خروجی را pipe کرده‌اید (`| Select-String`) یا ورودی کیبورد نیست. اجرا ذخیره شده است. بدون pipe بزنید `python main.py --resume --thread-id ...` تا نقشه را تأیید کنید، یا از اول با `--no-approval` اجرا کنید.
-
-**`thread '...' already holds a run`** — با `--thread-id` تکراری سؤال **جدید** پرسیده‌اید. قبلاً گزارش قبلی برمی‌گشت. برای ادامهٔ همان اجرا `--resume` بزنید، برای سؤال جدید `--thread-id` را حذف کنید.
-
-**`error in the settings (.env or environment): ...`** — یک مقدار در `.env` قابل استفاده نیست؛ پیام نام تنظیم و شکل درست را می‌گوید. `.env` با هر encodingی که ویندوز ذخیره کند (UTF-8، UTF-8 با BOM، UTF-16) خوانده می‌شود، و فقط `.env` کنار `main.py` — نه فایل پوشهٔ والد.
-
-**کدهای خروج:** `0` گزارش نوشته شد · `1` گزارش نوشته نشد · `2` ورودی یا تنظیم نادرست · `3` مدل درخواست را رد کرد · `4` نقشه منتظر تأیید است · `130` Ctrl+C.
-
-**`UnicodeEncodeError: 'charmap' codec can't encode character`** — فقط وقتی خروجی را pipe یا redirect می‌کنید (`| Select-String`، `> run.log`) روی ویندوز. از ۰.۱۱.۲ کاراکتری که در code page نیست به `?` تبدیل می‌شود و اجرا ادامه پیدا می‌کند.
-
-**`PydanticSerializationUnexpectedValue ... field_name='parsed'`** — هشدار
-بی‌خطر خود langchain-openai در structured output. از ۰.۱۰.۳ پنهان است؛ با
-`--verbose` دوباره دیده می‌شود.
+This project started as the capstone for the freeCodeCamp LangGraph course. It was then hardened through real runs with hosted models and a full code review; each fix is covered by a test.
