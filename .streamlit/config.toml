@@ -1,0 +1,14 @@
+# Settings for the web app (app.py). Read by Streamlit on start.
+
+[browser]
+# Streamlit sends anonymous usage statistics to its makers by default.
+# Company data stays on this computer, so nothing is sent anywhere.
+gatherUsageStats = false
+
+[server]
+# Largest CSV a person can upload, in MB.
+maxUploadSize = 50
+
+[client]
+# Hides Streamlit's developer menu ("Deploy", "Rerun", ...) from colleagues.
+toolbarMode = "minimal"

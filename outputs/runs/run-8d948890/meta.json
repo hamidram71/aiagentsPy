@@ -1,0 +1,19 @@
+{
+  "thread_id": "run-8d948890",
+  "user": "Hamid",
+  "question": "What percentage of the departments are Engineering?",
+  "csv": "language-locales.csv",
+  "created": "2026-09-28T13:29:47",
+  "status": "done",
+  "model": "openai / gpt-6-luna",
+  "usage": {
+    "input_tokens": 19499,
+    "output_tokens": 1368
+  },
+  "error": "",
+  "report_path": "C:\\Users\\Hamid\\Python Projects\\csv-insight-agent\\outputs\\runs\\run-8d948890\\report_20260928_133033.md",
+  "findings": 3,
+  "charts": [
+    "engineering_department_share.png"
+  ]
+}

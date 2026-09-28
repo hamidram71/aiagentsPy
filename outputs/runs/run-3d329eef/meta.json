@@ -1,0 +1,19 @@
+{
+  "thread_id": "run-3d329eef",
+  "user": "hamid",
+  "question": "درصد زنها و مردها را مشخص کن.",
+  "csv": "people-100000.csv",
+  "created": "2026-09-28T15:03:52",
+  "status": "done",
+  "model": "openai / gpt-6-luna",
+  "usage": {
+    "input_tokens": 26712,
+    "output_tokens": 2301
+  },
+  "error": "",
+  "report_path": "C:\\Users\\Hamid\\Python Projects\\csv-insight-agent\\outputs\\runs\\run-3d329eef\\report_20260928_150546.md",
+  "findings": 4,
+  "charts": [
+    "sex_percentages.png"
+  ]
+}

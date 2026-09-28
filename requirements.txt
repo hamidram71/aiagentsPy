@@ -1,0 +1,23 @@
+# Pinned to the versions this project was tested against (LangGraph 1.x).
+# The freeCodeCamp course used LangGraph 0.x; see PRACTICE.md for the diffs.
+langgraph==1.2.11
+langgraph-checkpoint-sqlite==3.1.1
+langchain-core==1.6.3
+
+# Both are installed by default, because switching provider with one env
+# variable is a feature of this project and the test-suite exercises both.
+# Drop whichever you do not need; the tests skip a provider whose package is
+# missing rather than failing.
+langchain-openai==1.6.2
+langchain-anthropic==1.7.2
+
+pandas>=2.2
+matplotlib>=3.8
+pydantic>=2.7
+python-dotenv>=1.0
+
+# the web app (app.py, run_app.py)
+streamlit==1.64.0
+
+# dev
+pytest>=8.0
